@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#001418">
+<meta name="description" content="Proteção de tela animada: shurikens em espiral girando sobre um fundo em tons de ciano.">
+<title>Shurikens • Proteção de Tela</title>
+<style>
+  :root{
+    --cyan-deep:#001014;
+    --cyan-mid:#00323d;
+    --cyan:#00d7ef;
+    --cyan-bright:#8bfaff;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    overflow:hidden;
+    background:
+      radial-gradient(1200px 800px at 50% 42%, #06323c 0%, #01202a 45%, #000b0f 100%);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--cyan-bright);
+  }
+  #scene{
+    position:fixed;
+    inset:0;
+    width:100vw;
+    height:100vh;
+    display:block;
+    touch-action:none;
+    cursor:crosshair;
+  }
+  .hint{
+    position:fixed;
+    left:50%;
+    bottom:22px;
+    transform:translateX(-50%);
+    color:rgba(139,250,255,.78);
+    font-size:12px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    text-shadow:0 0 12px rgba(0,215,239,.6);
+    padding:8px 16px;
+    border:1px solid rgba(0,215,239,.25);
+    border-radius:999px;
+    background:rgba(0,20,24,.35);
+    -webkit-backdrop-filter:blur(6px);
+    backdrop-filter:blur(6px);
+    user-select:none;
+    pointer-events:none;
+    opacity:0;
+    animation:hintFade 9s ease forwards;
+  }
+  @keyframes hintFade{
+    0%,55%{ opacity:0; }
+    70%{ opacity:1; }
+    100%{ opacity:0; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .hint{ animation:none; opacity:.85; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="hint">mova o mouse • clique para tela cheia</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const TAU = Math.PI * 2;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let W = 0, H = 0, DPR = 1;
+  let shurikens = [];
+  let particles = [];
+  const mouse = { x: -9999, y: -9999, active: false };
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  /* ---------------------------------------------------------------- *
+   *  Shuriken / furacão: braços em espiral com pontas curvas         *
+   * ---------------------------------------------------------------- */
+  class Shuriken {
+    constructor(initial) {
+      this.reset(initial);
+    }
+
+    reset(initial) {
+      const depth = Math.pow(Math.random(), 0.75); // profundidade (parallax)
+      this.depth = depth;
+      this.size = lerp(30, 150, depth) * rand(0.75, 1.15);
+
+      this.x = initial ? Math.random() * W
+                       : (Math.random() < 0.5 ? -this.size : W + this.size);
+      this.y = initial ? Math.random() * H
+                       : (Math.random() < 0.5 ? -this.size : H + this.size);
+
+      const speed = reduce ? lerp(4, 12, depth) : lerp(10, 46, depth);
+      const ang = Math.random() * TAU;
+      this.vx = Math.cos(ang) * speed;
+      this.vy = Math.sin(ang) * speed;
+
+      this.rot = Math.random() * TAU;
+      this.spin = (Math.random() < 0.5 ? -1 : 1) * (reduce ? 0.25 : lerp(0.5, 2.4, depth));
+
+      this.arms = Math.random() < 0.35 ? 5 : 4;
+      this.sweep = rand(1.55, 2.45) * Math.PI;   // quanto o braço enrola
+      this.alpha = lerp(0.4, 1, depth);
+      this.core = rand(0.08, 0.14);
+
+      this.trailLen = Math.round(lerp(4, 12, depth));
+      this.trail = [];
+
+      this.tint = Math.random() < 0.5
+        ? "rgba(235,255,255,0.97)"
+        : "rgba(214,250,255,0.95)";
+    }
+
+    update(dt) {
+      // repulsão suave em relação ao mouse
+      if (mouse.active) {
+        const dx = this.x - mouse.x;
+        const dy = this.y - mouse.y;
+        const d2 = dx * dx + dy * dy;
+        const R = 180 + this.size;
+        if (d2 < R * R && d2 > 0.01) {
+          const d = Math.sqrt(d2);
+          const f = (1 - d / R) * (reduce ? 40 : 220) * dt;
+          this.x += (dx / d) * f;
+          this.y += (dy / d) * f;
+        }
+      }
+
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      const m = this.size;
+      if (this.x < -m)     { this.x = -m;     this.vx = Math.abs(this.vx); }
+      if (this.x > W + m)  { this.x = W + m;  this.vx = -Math.abs(this.vx); }
+      if (this.y < -m)     { this.y = -m;     this.vy = Math.abs(this.vy); }
+      if (this.y > H + m)  { this.y = H + m;  this.vy = -Math.abs(this.vy); }
+
+      this.rot += this.spin * dt;
+
+      this.trail.push({ x: this.x, y: this.y, rot: this.rot });
+      while (this.trail.length > this.trailLen) this.trail.shift();
+    }
+
+    // desenha o corpo no espaço local (centro em 0,0)
+    drawShape(size, arms, sweep, core) {
+      const steps = 40;
+      for (let a = 0; a < arms; a++) {
+        const base = (a * TAU) / arms;
+        const outer = [];
+        const inner = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const ang = base + t * sweep;               // ângulo cresce = espiral
+          const rad = size * Math.pow(t, 0.92);       // raio cresce
+          const w = (1 - t) * size * 0.15 + size * 0.012; // largura afina na ponta
+          const nx = -Math.sin(ang);
+          const ny = Math.cos(ang);
+          const px = Math.cos(ang) * rad;
+          const py = Math.sin(ang) * rad;
+          outer.push([px + nx * w, py + ny * w]);
+          inner.push([px - nx * w, py - ny * w]);
+        }
+        ctx.beginPath();
+        ctx.moveTo(outer[0][0], outer[0][1]);
+        for (let i = 1; i < outer.length; i++) ctx.lineTo(outer[i][0], outer[i][1]);
+        for (let i = inner.length - 1; i >= 0; i--) ctx.lineTo(inner[i][0], inner[i][1]);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // núcleo brilhante
+      ctx.beginPath();
+      ctx.arc(0, 0, size * core, 0, TAU);
+      ctx.fill();
+    }
+
+    draw() {
+      // rastro (cópias fantasma)
+      const len = this.trail.length;
+      for (let i = 0; i < len - 1; i++) {
+        const p = this.trail[i];
+        const k = i / len;
+        const a = this.alpha * k * k * 0.28;
+        if (a <= 0.004) continue;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = "rgba(150,250,255,0.9)";
+        this.drawShape(this.size * (0.55 + k * 0.45), this.arms, this.sweep, this.core);
+        ctx.restore();
+      }
+
+      // corpo
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rot);
+      ctx.globalAlpha = this.alpha;
+      ctx.fillStyle = this.tint;
+
+      ctx.shadowColor = "rgba(0,215,239,0.95)";
+      ctx.shadowBlur = this.size * 0.55;
+      this.drawShape(this.size, this.arms, this.sweep, this.core);
+
+      ctx.shadowColor = "rgba(139,250,255,0.9)";
+      ctx.shadowBlur = this.size * 0.22;
+      this.drawShape(this.size * 0.55, this.arms, this.sweep, this.core);
+
+      ctx.restore();
+    }
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Cena                                                            *
+   * ---------------------------------------------------------------- */
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildScene();
+  }
+
+  function buildScene() {
+    const area = W * H;
+
+    const count = clamp(Math.round(area / 78000), 5, 20);
+    shurikens = [];
+    for (let i = 0; i < count; i++) shurikens.push(new Shuriken(true));
+
+    const pcount = clamp(Math.round(area / 26000), 20, 90);
+    particles = [];
+    for (let i = 0; i < pcount; i++) {
+      particles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: rand(0.5, 1.8),
+        vx: rand(-8, 8),
+        vy: rand(-8, 8),
+        a: rand(0.15, 0.7),
+        tw: rand(0.5, 2) * (Math.random() < 0.5 ? -1 : 1),
+      });
+    }
+  }
+
+  const blobs = [
+    { x: 0.30, y: 0.35, r: 0.55, c: "rgba(0,190,220,0.16)",  s: 0.00013 },
+    { x: 0.72, y: 0.62, r: 0.62, c: "rgba(0,240,255,0.12)",  s: -0.00009 },
+    { x: 0.55, y: 0.15, r: 0.42, c: "rgba(120,250,255,0.08)", s: 0.00007 },
+  ];
+
+  function drawBackground(time) {
+    const g = ctx.createRadialGradient(
+      W * 0.5, H * 0.42, 0,
+      W * 0.5, H * 0.5, Math.max(W, H) * 0.78
+    );
+    g.addColorStop(0, "#083b46");
+    g.addColorStop(0.42, "#032430");
+    g.addColorStop(0.78, "#01151c");
+    g.addColorStop(1, "#00080b");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // brilhos ciano que passeiam devagar
+    for (const b of blobs) {
+      const bx = (b.x + Math.sin(time * b.s) * 0.06) * W;
+      const by = (b.y + Math.cos(time * b.s * 1.3) * 0.06) * H;
+      const rad = Math.max(W, H) * b.r;
+      const rg = ctx.createRadialGradient(bx, by, 0, bx, by, rad);
+      rg.addColorStop(0, b.c);
+      rg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = rg;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function drawParticles(dt, time) {
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.a += Math.sin(time * 0.001 * p.tw) * 0.002;
+
+      if (p.x < -5)    p.x = W + 5;
+      if (p.x > W + 5) p.x = -5;
+      if (p.y < -5)    p.y = H + 5;
+      if (p.y > H + 5) p.y = -5;
+
+      ctx.globalAlpha = clamp(p.a, 0.05, 0.8);
+      ctx.fillStyle = "rgba(170,250,255,0.9)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Loop                                                            *
+   * ---------------------------------------------------------------- */
+  const t0 = performance.now();
+  let last = t0;
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    const time = now - t0;
+
+    drawBackground(time);
+
+    ctx.globalCompositeOperation = "lighter";
+    drawParticles(dt, time);
+    for (const s of shurikens) {
+      s.update(dt);
+      s.draw();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Eventos                                                         *
+   * ---------------------------------------------------------------- */
+  window.addEventListener("resize", resize);
+
+  window.addEventListener("pointermove", (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  }, { passive: true });
+
+  window.addEventListener("pointerleave", () => { mouse.active = false; });
+
+  window.addEventListener("pointerdown", () => {
+    const el = document.documentElement;
+    const enter = el.requestFullscreen || el.webkitRequestFullscreen;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!document.fullscreenElement && enter) {
+      enter.call(el);
+    } else if (exit) {
+      exit.call(document);
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    last = performance.now();
+  });
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
