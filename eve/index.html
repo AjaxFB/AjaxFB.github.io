@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>EVE Market — arbitragem cross-region (client-side)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Ferramenta de mercado e arbitragem cross-region para EVE Online. 100% client-side, sem servidor, de graça.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<style>
+  :root {
+    --bg: #0a0d13; --bg2: #0e131b; --panel: #121826; --panel2: #0d121c;
+    --line: #1e2836; --line2: #263243; --txt: #cbd5e1; --dim: #7d8aa0;
+    --accent: #38bdf8; --accent2: #0ea5e9; --ok: #4ade80; --warn: #facc15;
+    --err: #f87171; --gold: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg); color: var(--txt); font-size: 13px; overflow: hidden; }
+  button { font-family: inherit; cursor: pointer; }
+  input, select, textarea { font-family: inherit; }
+  a { color: var(--accent); }
+
+  /* ---------- topbar ---------- */
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    background: var(--panel2); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700;
+    color: #fff; letter-spacing: .02em; white-space: nowrap; }
+  .brand .dot { color: var(--accent); }
+  .brand .tag { font-size: 10px; color: var(--dim); border: 1px solid var(--line2);
+    border-radius: 999px; padding: 1px 7px; font-weight: 400; }
+  .corp-link { display: inline-flex; align-items: center; }
+  .corp-link img { height: 24px; width: auto; border-radius: 5px; border: 1px solid var(--line2);
+    background: #0b1220; display: block; transition: .15s; }
+  .corp-link:hover img { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .spacer { flex: 1; }
+  .pill { font-size: 11px; padding: 3px 10px; border-radius: 999px; background: #172033;
+    color: var(--dim); border: 1px solid var(--line2); white-space: nowrap; }
+  .pill.ok { color: var(--accent); } .pill.warn { color: var(--warn); border-color: #5a4a12; }
+  .btn { background: #1b2740; color: #fff; border: 1px solid var(--line2); border-radius: 8px;
+    padding: 6px 12px; font-size: 12px; transition: .15s; }
+  .btn:hover { background: #25375a; } .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: #0c4a6e; border-color: var(--accent2); }
+  .btn.primary:hover { background: #075985; }
+  .btn.danger { background: #4c1111; border-color: #7f1d1d; }
+  .btn.mini { padding: 3px 7px; font-size: 11px; }
+
+  /* language flags */
+  .lang { display: inline-flex; gap: 3px; background: #0b1220; border: 1px solid var(--line2);
+    border-radius: 8px; padding: 2px; }
+  .lang-btn { background: none; border: 1px solid transparent; border-radius: 6px;
+    font-size: 15px; line-height: 1; padding: 3px 6px; opacity: .5; transition: .15s; }
+  .lang-btn:hover { opacity: .9; background: #172033; }
+  .lang-btn.active { opacity: 1; background: #1b2740; border-color: var(--accent2); }
+
+  /* ---------- tabs ---------- */
+  .tabs { display: flex; gap: 2px; padding: 0 14px; background: var(--panel2);
+    border-bottom: 1px solid var(--line); }
+  .tab-btn { background: none; border: none; color: var(--dim); padding: 9px 14px;
+    font-size: 12.5px; border-bottom: 2px solid transparent; }
+  .tab-btn:hover { color: var(--txt); }
+  .tab-btn.active { color: #fff; border-bottom-color: var(--accent); }
+
+  main { height: calc(100vh - 84px); overflow: hidden; }
+  .tab { display: none; height: 100%; }
+  .tab.active { display: flex; }
+
+  /* ---------- oportunidades ---------- */
+  #tab-opps { display: none; }
+  #tab-opps.active { display: grid; grid-template-columns: 310px minmax(0, 1fr); height: 100%; }
+  .col { overflow-y: auto; padding: 12px; min-height: 0; }
+  .col.left { background: var(--panel2); border-right: 1px solid var(--line); }
+  /* switch Mercado / Filtros (coluna esquerda) */
+  .side-switch { display: flex; gap: 4px; margin-bottom: 11px; background: #0b1220;
+    border: 1px solid var(--line2); border-radius: 8px; padding: 3px; }
+  .side-btn { flex: 1; background: none; border: 1px solid transparent; border-radius: 6px;
+    color: var(--dim); padding: 5px 8px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; transition: .15s; }
+  .side-btn:hover { color: var(--txt); }
+  .side-btn.active { background: #1b2740; border-color: var(--accent2); color: #fff; }
+  .side-pane { display: none; }
+  .side-pane.active { display: block; }
+  .col.center { display: flex; flex-direction: column; gap: 10px; overflow-y: auto;
+    overflow-x: hidden; padding: 10px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
+    margin-bottom: 9px; font-weight: 600; }
+
+  /* market tree */
+  #mg-search, .inp { width: 100%; background: var(--bg2); border: 1px solid var(--line2);
+    color: #e2e8f0; border-radius: 8px; padding: 7px 10px; font-size: 12.5px; }
+  .sugg { max-height: 220px; overflow-y: auto; margin-top: 4px; }
+  .sugg-i { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 6px;
+    cursor: pointer; color: #c3cddd; }
+  .sugg-i:hover { background: #1b2740; color: #fff; }
+  .mg-tree { margin-top: 8px; font-size: 12px; }
+  .mg > .mg-h { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px;
+    cursor: pointer; color: #dbe3ef; font-weight: 600; }
+  .mg > .mg-h:hover { background: #16202f; }
+  .mg .car { color: var(--dim); display: inline-block; transition: transform .1s; font-size: 10px; }
+  .mg.open > .mg-h .car { transform: rotate(90deg); }
+  .mg > .mg-kids { display: none; margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
+  .mg.open > .mg-kids { display: block; }
+  .it { display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    padding: 2px 6px; border-radius: 5px; color: #8fa0b8; }
+  .it:hover { background: #16202f; color: #fff; }
+  .it-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .tree-acts { display: inline-flex; gap: 3px; }
+  .tree-acts button { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--line2);
+    background: #16202f; color: #cbd5e1; font-weight: 700; line-height: 1; }
+  .act-add:hover { background: #14532d; color: #fff; } .act-rem:hover { background: #7f1d1d; color: #fff; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 7px;
+    font-size: 11px; }
+  .tag-add { background: #123a2a; color: #86efac; border: 1px solid #1f6f45; }
+  .tag-rem { background: #3a1414; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .tag .x { cursor: pointer; color: #f87171; font-weight: 700; }
+  .tag .x:hover { color: #fff; }
+
+  /* region cards */
+  #region-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 9px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  .card.ok { border-color: #1f6f45; } .card.err { border-color: #7f1d1d; }
+  .card.load { border-color: #5a4a12; }
+  .reg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .reg-head h3 { font-size: 12.5px; color: #fff; flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .reg-head .st { font-size: 12px; } .card.ok .st { color: var(--ok); }
+  .card.err .st { color: var(--err); } .card.load .st { color: var(--warn); }
+  .card .stat { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--dim);
+    padding: 2px 0; border-bottom: 1px dotted var(--line); }
+  .card .stat b { color: #e2e8f0; }
+  .card.add { border-style: dashed; }
+  .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+
+  .log { font-size: 11px; color: var(--dim); white-space: pre-wrap; background: var(--bg2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; height: 84px;
+    overflow-y: auto; flex: 0 0 auto; }
+
+  /* results table */
+  .results { flex: 1 1 auto; min-height: 55vh; display: flex; flex-direction: column;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel2); }
+  .results-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; flex-wrap: wrap;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  .results-head h2 { margin: 0; }
+  /* slider horizontal: rola a tabela para ver as colunas fora da tela */
+  .hslide { margin-left: auto; display: none; align-items: center; gap: 7px; }
+  .hslide.on { display: flex; }
+  .hslide input[type=range] { width: 180px; accent-color: var(--ok); cursor: pointer; }
+  .hslide .meta { white-space: nowrap; }
+  .tablewrap { flex: 1 1 auto; overflow: auto; }
+  table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; }
+  th { position: sticky; top: 0; z-index: 2; background: #16202f; color: var(--dim); text-align: left;
+    font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line2); cursor: pointer;
+    white-space: nowrap; user-select: none; }
+  th:hover { color: #fff; }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.s-asc::after { content: ' ▲'; color: var(--ok); }
+  th.s-desc::after { content: ' ▼'; color: var(--err); }
+  td { padding: 4px 8px; border-bottom: 1px solid #141c28; white-space: nowrap; }
+  tbody tr:hover { background: #16202f; }
+  td.item { display: flex; align-items: center; gap: 6px; max-width: 240px; }
+  /* primeira coluna (Item) fixa ao rolar na horizontal */
+  th:first-child, td.item { position: sticky; left: 0; z-index: 1; }
+  th:first-child { z-index: 3; }
+  td.item { background: var(--panel2); box-shadow: 1px 0 0 var(--line); }
+  tbody tr:hover td.item { background: #16202f; }
+  .iname { overflow: hidden; text-overflow: ellipsis; }
+  .ico { width: 20px; height: 20px; border-radius: 3px; background: #0b1220; flex: 0 0 auto; }
+  .roi { color: var(--ok); } .strong { color: #fff; font-weight: 700; } .hl { color: var(--gold); font-weight: 700; }
+  .loc { color: var(--dim); } .meta { color: var(--dim); font-size: 11.5px; }
+  .sec { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 2px; }
+  .err { color: var(--err); } .ok2 { color: var(--ok); } .warn2 { color: var(--warn); }
+
+  /* filters */
+  .filtro { margin-bottom: 10px; }
+  .filtro label { display: block; font-size: 10.5px; color: var(--dim); margin-bottom: 3px;
+    text-transform: uppercase; letter-spacing: .05em; }
+  .filtro .two { display: flex; gap: 6px; } .filtro .two > * { flex: 1; min-width: 0; }
+  .ship-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .ship-btn { flex: 1; }
+  .ship-btn.active { background: #14532d; border-color: var(--ok); color: #fff; }
+  #preset-json { width: 100%; height: 62px; font-size: 11px; background: var(--bg2);
+    color: #7dd3fc; border: 1px solid var(--line2); border-radius: 6px; padding: 5px; }
+
+  /* legal pane */
+  .pane { overflow-y: auto; padding: 18px; width: 100%; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px; margin-bottom: 14px; }
+  .legal p { margin-bottom: 9px; line-height: 1.55; max-width: 900px; }
+  .legal h3 { margin: 16px 0 6px; color: #fff; font-size: 13px; }
+  .legal ul { margin: 0 0 10px 20px; line-height: 1.5; }
+  .legal ul.ep { list-style: none; margin-left: 0; }
+  .legal ul.ep > li { margin-bottom: 7px; }
+  .legal ul.ep ul { margin: 4px 0 0 16px; }
+  .legal code { background: #0b1220; border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 5px; font-size: 11px; color: #7dd3fc; }
+  .legal .quote { border-left: 3px solid var(--line2); padding: 2px 0 2px 12px;
+    margin: 0 0 12px; }
+  .legal .quote p { margin: 0 0 4px; font-style: italic; color: #b6c2d4; }
+  .legal .quote .meta { font-style: normal; }
+  .badge { display: inline-block; font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+    background: #123a2a; color: #86efac; border: 1px solid #1f6f45; margin-right: 5px; }
+  .badge.blue { background: #0c2a45; color: #7dd3fc; border-color: #0c4a6e; }
+  .badge.gold { background: #3a2f0c; color: #fcd34d; border-color: #7c5a12; }
+
+  /* modal */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none;
+    align-items: center; justify-content: center; z-index: 50; }
+  #modal.open { display: flex; }
+  .modal-card { background: var(--panel); border: 1px solid var(--line2); border-radius: 12px;
+    width: min(680px, 92vw); max-height: 86vh; overflow-y: auto; padding: 18px; position: relative; }
+  #modal-close { position: absolute; top: 10px; right: 12px; background: none; border: none;
+    color: var(--dim); font-size: 20px; }
+  #modal-close:hover { color: #fff; }
+  .mhead { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+  .mhead img { width: 56px; height: 56px; border-radius: 6px; background: #0b1220; }
+  .mhead h3 { color: #fff; font-size: 15px; }
+  .mgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+    margin-bottom: 12px; }
+  .mgrid > div { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 9px; display: flex; flex-direction: column; gap: 2px; }
+  .mgrid b { font-size: 10px; color: var(--dim); text-transform: uppercase; font-weight: 600; }
+  .mgrid span { color: #fff; }
+  .mhist b { display: block; margin-bottom: 6px; color: #fff; font-size: 12px; }
+  .spark { width: 100%; height: 80px; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 8px; }
+
+  footer { position: fixed; bottom: 0; left: 0; right: 0; height: 26px; display: flex;
+    align-items: center; gap: 10px; padding: 0 14px; background: var(--panel2);
+    border-top: 1px solid var(--line); font-size: 10.5px; color: var(--dim); }
+  footer .spacer { flex: 1; }
+  @media (max-width: 1100px) { #tab-opps.active { grid-template-columns: 260px minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot">◈</span> EVE Market
+    <span class="tag" data-i18n="brand.tag">client-side</span>
+    <a class="corp-link" href="https://evemaps.dotlan.net/corp/Universal_Prayer"
+       target="_blank" rel="noopener" title="Universal Prayer — Dotlan">
+      <img src="eve.png" alt="Universal Prayer">
+    </a>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill" id="esi-pill">ESI —</span>
+  <div class="lang" id="lang">
+    <button class="lang-btn" data-lang="pt" title="Português">🇧🇷</button>
+    <button class="lang-btn" data-lang="en" title="English">🇺🇸</button>
+    <button class="lang-btn" data-lang="es" title="Español">🇪🇸</button>
+  </div>
+  <button class="btn primary" id="btn-collect" data-i18n="btn.collect">⟳ Coletar</button>
+  <button class="btn danger" id="btn-force" data-i18n="btn.force" data-i18n-title="btn.force.title">⚡ Forçar</button>
+  <button class="btn" id="btn-export" data-i18n="btn.export" data-i18n-title="btn.export.title">⭳ CSV</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="opps" data-i18n="tab.opps">Oportunidades</button>
+  <button class="tab-btn" data-tab="legal" data-i18n="tab.legal">Legal</button>
+</nav>
+
+<main>
+  <!-- ===================== OPORTUNIDADES ===================== -->
+  <section id="tab-opps" class="tab active">
+    <aside class="col left">
+      <div class="side-switch" id="side-switch">
+        <button class="side-btn active" data-side="market" data-i18n="left.market">Mercado</button>
+        <button class="side-btn" data-side="filters" data-i18n="right.filters">Filtros</button>
+      </div>
+
+      <!-- ---------- painel: Mercado ---------- -->
+      <div class="side-pane active" id="side-market">
+        <input type="text" id="mg-search" data-i18n-ph="left.searchPh" placeholder="buscar item...">
+        <div id="mg-results" class="sugg"></div>
+        <div class="filtro" style="margin-top:12px">
+          <label data-i18n="left.whitelist">whitelist (só estes)</label>
+          <div class="tags" id="wl-tags"></div>
+        </div>
+        <div class="filtro">
+          <label data-i18n="left.blacklist">blacklist (exceto estes)</label>
+          <div class="tags" id="bl-tags"></div>
+        </div>
+        <h2 style="margin-top:14px" data-i18n="left.tree">Árvore de mercado</h2>
+        <div id="mg-tree" class="mg-tree"></div>
+      </div>
+
+      <!-- ---------- painel: Filtros ---------- -->
+      <div class="side-pane" id="side-filters">
+        <div class="ship-row">
+          <button class="btn ship-btn" data-ship="c10" data-i18n="ship.shuttle">Shuttle</button>
+          <button class="btn ship-btn" data-ship="c600" data-i18n="ship.frigate">Frigate</button>
+          <button class="btn ship-btn" data-ship="c30k" data-i18n="ship.hauler">Hauler</button>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.item">nome do item</label><input class="inp" id="f-name" data-i18n-ph="f.itemPh" placeholder="texto..."></div>
+
+        <div class="filtro"><label data-i18n="f.tax">taxa compra / venda (%)</label>
+          <div class="two">
+            <input class="inp" type="number" id="f-taxbuy" step="0.1" min="0" value="0">
+            <input class="inp" type="number" id="f-taxsell" step="0.1" min="0" value="7.5">
+          </div>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.roi">roi min / max (%)</label>
+          <div class="two"><input class="inp" type="number" id="f-roimin" value="20"><input class="inp" type="number" id="f-roimax" placeholder="∞"></div>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.ppj">ppj min (ISK/salto)</label><input class="inp" type="number" id="f-ppjmin" placeholder="0"></div>
+
+        <div class="filtro"><label data-i18n="f.jumps">saltos máx (compra↔venda)</label><input class="inp" type="number" id="f-jumps" placeholder="∞"></div>
+
+        <div class="filtro"><label data-i18n="f.buysec">segurança compra min / max</label>
+          <div class="two"><input class="inp" type="number" id="f-buysecmin" step="0.1" placeholder="0.0"><input class="inp" type="number" id="f-buysecmax" step="0.1" placeholder="1.0"></div>
+        </div>
+        <div class="filtro"><label data-i18n="f.sellsec">segurança venda min / max</label>
+          <div class="two"><input class="inp" type="number" id="f-sellsecmin" step="0.1" placeholder="0.0"><input class="inp" type="number" id="f-sellsecmax" step="0.1" placeholder="1.0"></div>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.vol">volume un. m³ min / max</label>
+          <div class="two"><input class="inp" type="number" id="f-m3min" placeholder="0"><input class="inp" type="number" id="f-m3max" placeholder="∞"></div>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.price">preço un. (compra) min / max</label>
+          <div class="two"><input class="inp" type="number" id="f-pricemin" placeholder="0"><input class="inp" type="number" id="f-pricemax" placeholder="∞"></div>
+        </div>
+
+        <div class="filtro"><label data-i18n="f.buyregion">região compra (texto)</label><input class="inp" id="f-buyregion" data-i18n-ph="f.buyregionPh" placeholder="ex: Domain"></div>
+        <div class="filtro"><label data-i18n="f.sellregion">região venda (texto)</label><input class="inp" id="f-sellregion" data-i18n-ph="f.sellregionPh" placeholder="ex: The Forge"></div>
+
+        <div class="filtro"><label data-i18n="f.topn">top N oportunidades</label><input class="inp" type="number" id="f-topn" value="5000" min="1" max="20000"></div>
+        <div class="filtro"><label data-i18n="f.displaymax">exibir no máximo</label><input class="inp" type="number" id="f-displaymax" value="1500" min="50" max="20000"></div>
+        <div class="filtro row"><input type="checkbox" id="f-group"><span class="meta" data-i18n="f.group">agrupar por item+par</span></div>
+        <div class="filtro row"><input type="checkbox" id="f-icons" checked><span class="meta" data-i18n="f.icons">ícones</span></div>
+
+        <div class="filtro"><div class="meta" id="filters-info"></div></div>
+
+        <div class="filtro">
+          <label data-i18n="f.preset">preset (JSON)</label>
+          <textarea id="preset-json" placeholder='{"regions":[10000002],"taxes":{"buy":0,"sell":7.5}}'></textarea>
+          <div class="two" style="margin-top:5px">
+            <button class="btn" id="btn-preset-copy" data-i18n="preset.copy">copiar</button>
+            <button class="btn" id="btn-preset-load" data-i18n="preset.load">carregar</button>
+            <button class="btn" id="btn-preset-clear" data-i18n="preset.clear">limpar</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="col center">
+      <div>
+        <h2><span data-i18n="center.collect">Coleta ESI</span> <span class="meta" id="esi-countdown"></span></h2>
+        <div id="region-grid"></div>
+      </div>
+      <div class="log" id="collect-log"></div>
+      <div class="results">
+        <div class="results-head">
+          <h2 id="cycle-title" data-i18n="results.title">Oportunidades</h2>
+          <span class="meta" id="cycle-meta"></span>
+          <div class="hslide" id="hslide" data-i18n-title="results.colsTitle" title="deslize para ver as colunas">
+            <span class="meta" data-i18n="results.cols">colunas</span>
+            <input type="range" id="hslide-range" min="0" max="0" value="0" step="1"
+                   aria-label="rolagem horizontal da tabela">
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr id="tbl-head"></tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LEGAL ===================== -->
+  <section id="tab-legal" class="tab">
+    <div class="pane legal">
+      <div class="panel">
+        <h2 data-i18n="legal.title">Sobre esta ferramenta</h2>
+        <p>
+          <span class="badge" data-i18n="legal.badge1">não-comercial</span>
+          <span class="badge blue" data-i18n="legal.badge2">client-side</span>
+          <span class="badge gold" data-i18n="legal.badge3">projeto de fã</span>
+        </p>
+        <p data-i18n="legal.intro">Ferramenta de mercado e arbitragem cross-region para EVE Online. Ela usa a API pública (ESI) e o SDE estático oficial. Não cobra nada, não tem paywall e não restringe acesso — conforme a política do desenvolvedor (Fenris Creations, ex-CCP Games) para Aplicações de terceiros.</p>
+
+        <h3 data-i18n="legal.flowTitle">Como os dados fluem</h3>
+        <ul>
+          <li data-i18n="legal.flow1">O seu navegador fala direto com esi.evetech.net e images.evetech.net.</li>
+          <li data-i18n="legal.flow2">Não existe servidor nosso, banco central, telemetria ou analytics.</li>
+          <li data-i18n="legal.flow3">Os dados coletados ficam no seu IndexedDB; os ajustes, no seu localStorage.</li>
+          <li data-i18n="legal.flow4">Nenhuma chamada autenticada, nenhuma chave de API, nenhum SSO/login.</li>
+        </ul>
+
+        <h3 data-i18n="legal.dataTitle">Fontes de dados e endpoints</h3>
+        <ul class="ep">
+          <li><b>ESI</b> — <span class="meta" data-i18n="legal.epEsiB">API pública, sem autenticação</span> · <a href="https://esi.evetech.net/latest" target="_blank" rel="noopener">esi.evetech.net/latest</a>
+            <ul>
+              <li><code>GET /markets/{region_id}/orders/?order_type=all&amp;datasource=tranquility&amp;page={n}</code>
+                <span class="meta" data-i18n="legal.epOrders">— ordens de mercado por região (paginação por X-Pages; cache por ETag/Expires)</span></li>
+              <li><code>GET /markets/{region_id}/history/?type_id={id}&amp;datasource=tranquility</code>
+                <span class="meta" data-i18n="legal.epHistory">— histórico diário de preço (modal de detalhe)</span></li>
+              <li><code>POST /universe/names/</code>
+                <span class="meta" data-i18n="legal.epNames">— resolve IDs→nomes (apenas no build do SDE)</span></li>
+              <li><span class="meta" data-i18n="legal.epRate">— limites lidos dos headers X-Ratelimit-*; backoff em 429 / Retry-After</span></li>
+              <li><span class="meta" data-i18n="legal.epUa">— identifica a aplicação via X-User-Agent (browsers descartam User-Agent):</span>
+                <code>EVE-Market/1.0 (+https://github.com/AjaxFB/AjaxFB.github.io)</code></li>
+            </ul>
+          </li>
+          <li><b data-i18n="legal.epImgB">Imagens</b> — <a href="https://images.evetech.net" target="_blank" rel="noopener">images.evetech.net</a>
+            <span class="meta" data-i18n="legal.epImg">— ícones de tipos exibidos direto do servidor oficial</span></li>
+          <li><b>SDE</b> <span class="meta" data-i18n="legal.epSdeB">(dados estáticos oficiais)</span> — <a href="https://developers.eveonline.com/static-data" target="_blank" rel="noopener">developers.eveonline.com/static-data</a>
+            <span class="meta" data-i18n="legal.epSde">— build baixado uma vez por build/gen_sde.py e embutido em sde.js</span></li>
+          <li><b>Dotlan</b> <span class="meta" data-i18n="legal.epDotlanB">(link externo, só navegação)</span> — <a href="https://evemaps.dotlan.net" target="_blank" rel="noopener">evemaps.dotlan.net</a></li>
+        </ul>
+
+        <h3 data-i18n="legal.lawTitle">Enquadramento legal (resumo)</h3>
+        <ul>
+          <li><a href="https://developers.eveonline.com/license-agreement" target="_blank" rel="noopener">EVE Developer License Agreement (DLA)</a> <span data-i18n="legal.law1b">— Aplicação não-comercial (§1.13, §4.1); monetização só nas formas do §4.4 (ISK, doação de hospedagem, anúncios gerais).</span></li>
+          <li><a href="https://support.eveonline.com/hc/en-us/articles/8564030965660-Third-Party-Policies" target="_blank" rel="noopener">Third Party Policies</a> <span data-i18n="legal.law2b">— sem modificar o cliente; cache scraping é proibido (EULA §9.C).</span></li>
+          <li><a href="https://support.eveonline.com/hc/en-us/articles/8563917741084-EVE-Online-Content-Creation-Terms-of-Use" target="_blank" rel="noopener">Content Creation Terms of Use</a> <span data-i18n="legal.law3b">— conteúdo gratuito, sem paywall; uso de marcas com aviso.</span></li>
+          <li><a href="https://support.eveonline.com/hc/en-us/articles/8413329735580-EVE-Online-End-User-License-Agreement" target="_blank" rel="noopener">EULA</a> · <a href="https://support.eveonline.com/hc/en-us/articles/8414770561948-EVE-Online-Terms-of-Service" target="_blank" rel="noopener">Terms of Service</a> <span data-i18n="legal.law4b">— uso pessoal; sem automatizar o cliente.</span></li>
+          <li><a href="https://fenris.com/privacy-policy" target="_blank" rel="noopener">Fenris Creations Privacy Policy</a> <span data-i18n="legal.law5b">— dados do ESI não são dados pessoais; nada é coletado por nós (LGPD/GDPR).</span></li>
+        </ul>
+
+        <h3 data-i18n="legal.citeTitle">Citações (fontes oficiais)</h3>
+        <div class="quote">
+          <p>“Via the EVE Swagger Interface ("ESI"), Fenris Creations provides public access to a limited dataset, solely linked to Players' character names. […] the data available via ESI is not considered personal data under EU data protection regulations.”</p>
+          <p class="meta">— <a href="https://fenris.com/privacy-policy" target="_blank" rel="noopener">Fenris Creations Privacy Policy</a>, <span data-i18n="legal.citeUpd">atualizado em 18 May 2026</span></p>
+        </div>
+        <div class="quote">
+          <p>“The rights granted under this Agreement are intended for non-commercial and non-profit use solely to improve the enjoyment of EVE.”</p>
+          <p class="meta">— <a href="https://developers.eveonline.com/license-agreement" target="_blank" rel="noopener">EVE Developer License Agreement</a>, §4.1</p>
+        </div>
+        <div class="quote">
+          <p>“Non-Commercial – your content must be available free of charge to everyone and cannot be blocked behind a paywall or premium subscription.”</p>
+          <p class="meta">— <a href="https://support.eveonline.com/hc/en-us/articles/8563917741084-EVE-Online-Content-Creation-Terms-of-Use" target="_blank" rel="noopener">EVE Online Content Creation Terms of Use</a></p>
+        </div>
+        <div class="quote">
+          <p>“Our EULA does not permit the scraping of the EVE Online cache.”</p>
+          <p class="meta">— <a href="https://support.eveonline.com/hc/en-us/articles/8564030965660-Third-Party-Policies" target="_blank" rel="noopener">EVE Online Third Party Policies</a> (EULA §9.C)</p>
+        </div>
+
+        <p class="meta"><span data-i18n="legal.source">Código-fonte:</span>
+          <a href="https://github.com/AjaxFB/AjaxFB.github.io" target="_blank" rel="noopener">github.com/AjaxFB/AjaxFB.github.io</a></p>
+
+        <p class="meta"><span data-i18n="legal.official">Links oficiais:</span>
+          <a href="https://developers.eveonline.com/license-agreement" target="_blank" rel="noopener">EVE Developer License Agreement</a> ·
+          <a href="https://developers.eveonline.com/docs/resources/license/" target="_blank" rel="noopener">Developer Docs License</a> ·
+          <a href="https://support.eveonline.com/hc/en-us/articles/8413329735580-EVE-Online-End-User-License-Agreement" target="_blank" rel="noopener">EULA</a> ·
+          <a href="https://support.eveonline.com/hc/en-us/articles/8414770561948-EVE-Online-Terms-of-Service" target="_blank" rel="noopener">Terms of Service</a> ·
+          <a href="https://support.eveonline.com/hc/en-us/articles/8564030965660-Third-Party-Policies" target="_blank" rel="noopener">Third Party Policies</a> ·
+          <a href="https://support.eveonline.com/hc/en-us/articles/8563917741084-EVE-Online-Content-Creation-Terms-of-Use" target="_blank" rel="noopener">Content Creation ToU</a> ·
+          <a href="https://developers.eveonline.com/static-data" target="_blank" rel="noopener">Static Data (SDE)</a> ·
+          <a href="https://fenris.com/privacy-policy" target="_blank" rel="noopener">Fenris Privacy Policy</a>
+        </p>
+
+        <h3 data-i18n="legal.tmTitle">Aviso de marca</h3>
+        <p class="meta" data-i18n="legal.tm">EVE Online® e Fenris Creations™, e todos os respectivos logotipos e elementos, são marcas da Fenris Creations. ©2026 Fenris Creations. Todos os direitos reservados. Esta ferramenta é um projeto não-oficial de fã, não afiliado nem endossado pela Fenris Creations (ex-CCP Games). Dados do jogo © Fenris Creations.</p>
+        <p class="meta" data-i18n="legal.disclaimer">Aviso exigido pelos Content Creation Terms of Use: “This material is used with limited permission of CCP Games. No official affiliation or endorsement by CCP Games is stated or implied.”</p>
+        <p class="meta" id="sde-ver"></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>◈ EVE Market</span>
+  <span data-i18n="footer.mid">projeto de fã · não-oficial · não-comercial</span>
+  <span class="spacer"></span>
+  <span data-i18n="footer.right">EVE Online © Fenris Creations. Dados via ESI/SDE oficiais.</span>
+</footer>
+
+<div id="modal"><div class="modal-card">
+  <button id="modal-close">×</button>
+  <div id="modal-body"></div>
+</div></div>
+
+<script src="sde.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
